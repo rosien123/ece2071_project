@@ -1,5 +1,7 @@
 import numpy as np
 import wave
+import matplotlib.pyplot as plt
+import csv
 
 """
 This file handles output generation only. The main file will call each function individually depending on
@@ -21,8 +23,26 @@ def gen_wav(data: np, sample_rate: int):
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(data.tobytes())
 
-def gen_png(data: np):
-    pass
+def gen_png(data:np.ndarray, sample_rate: int):
+    file_name = "testing.png"
+    time = np.arange(len(data)) / int(sample_rate)
 
-def gen_csv(data: np):
-    pass
+    plt.plot(time, data)
+
+    plt.title('Audio Waveform')
+    plt.xlabel('Time (seconds)')
+    plt.ylabel('Amplitude')
+
+    plt.savefig(file_name)
+    plt.close() #might change to show depending on if we want it open right away
+    
+def gen_csv(data:np.ndarray, sample_rate: int):
+    file_name = "testing.csv"
+    
+    with open(file_name, mode='w', newline='') as file:
+        csvwriter = csv.writer(file)
+        csvwriter.writerow([f"Sample Rate: {sample_rate}"])
+        #write all the values
+        for d in data:
+            csvwriter.writerows(d)
+    

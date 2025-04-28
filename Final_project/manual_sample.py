@@ -8,61 +8,25 @@ This file handles manual sampling from the processing STM (Task 1). The manual_s
 with the processing STM to generate a numpy array of the specified data. This numpy array is then returned.
 
 Last modified by: Martin
-Date last modified:
+Date last modified: 28/04
 Changes made:
 """
 
-def manual_sample(time, ser, sample_rate):
-    for _ in range(time * sample_rate):
-        if ser.in_waiting:
-            byte = ser.read(1)       # Read 1 byte
-            print(byte[0])
-            data.append(byte[0])     # append index 0
-        
-    data = np.array(data)
+def manual_sample(ser, sample_rate, duration):
+    prev = None #defining previous as nothing
+    for _ in range(duration * sample_rate): #This will read the sample for specified time
+        byte = ser.read(1) # Read 1 byte
+        if prev is None:
+            filtered = byte[0] #Trying to find the average of the first reading won't work so set the previous as the same as the first
+        else:
+            filtered = (prev + byte[0])/2 #Finding the average between consecutive readings 
+        data.append(filtered)# append value into data array
+        prev = byte[0] #define previous as previous reading, and not the average value
+    
+    #Convert into numpy array so it can be converted into audio file later
+    data = np.array(data) 
     data = (data - data.min()) / data.max()
     data = data * 255
 
     data = data.astype(np.uint8)
     return data
-
-# import numpy as np
-# import wave
-# import serial
-# import serial.tools.list_ports
-# import time
-
-
-# data = []
-# SAMPLE_RATE = 10000
-
-# # List available ports
-# devices = serial.tools.list_ports.comports()
-# for dev in devices:
-#     print(dev)  # Use .device instead of [0] for better compatibility
-# # Initialize serial port with proper settings
-# ser = serial.Serial("COM11", 115200)
-
-# prev = None
-# for _ in range(5 * SAMPLE_RATE): #forming the waveform 
-#     byte = ser.read(1)       # Read 1 byte
-#     if prev is None:
-#         filtered = byte[0]
-#     else:
-#         filtered = (prev + byte[0])/2
-#     # print(byte[0])
-#     data.append(filtered)     # append index 0
-#     prev = byte[0]
-        
-# data = np.array(data)
-# data = (data - data.min()) / data.max()
-# data = data * 255
-
-# data = data.astype(np.uint8)
-
-# file_name = "testing.wav"
-# with wave.open(file_name, 'wb') as wav_file:
-#     wav_file.setnchannels(1)
-#     wav_file.setsampwidth(1)
-#     wav_file.setframerate(SAMPLE_RATE)
-#     wav_file.writeframes(data.tobytes())

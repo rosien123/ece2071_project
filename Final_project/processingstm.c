@@ -59,13 +59,20 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM16_Init(void);
 /* USER CODE BEGIN PFP */
-volatile uint8_t sampledValue = 0;
-volatile uint8_t previousSampledValue = 0;  // New: To store the previous sample
 volatile uint8_t filteredValue = 0;
 volatile uint8_t newDataFlag = 0;   // Flag: new data available
-int send_data = 0;
+volatile uint8_t send_data = 0;
 volatile uint8_t bit;
 uint8_t txBuffer[2];
+
+const uint8_t filterLen = 4;
+const uint8_t rejectionThreshold = 20;
+
+volatile uint8_t sampleBytes[2];
+volatile uint16_t reconstructedSample = 0;
+
+uint16_t sampleBuffer[4] = {0};
+uint8_t bufferIdx = 0;
 
 /* USER CODE END PFP */
 void ultrasonic_sensor() {
@@ -89,17 +96,66 @@ void ultrasonic_sensor() {
 }
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+//define varibales
+
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart == &huart1) {
-        // Perform moving average
-        filteredValue = (sampledValue + previousSampledValue) / 2;
-        previousSampledValue = sampledValue;
+        //define variables
+    	uint32_t sum = 0;
+    	uint16_t clean[4];
+    	uint32_t filteredSum = 0;
+    	static uint8_t downsampleToggle = 0;  // toggles between 0 and 1
+        HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
+
+        downsampleToggle ^= 1;  // flip between 0 and 1
+        if (downsampleToggle == 0) {
+            return;  // skip every alternate sample to achieve 22.05ksps
+        }
+
+    	//accomodate the 10bit
+    	reconstructedSample = (sampleBytes[1] << 8) | sampleBytes[0];
+
+    	//store sample in buffer and move idx
+        sampleBuffer[bufferIdx] = reconstructedSample;
+        bufferIdx = (bufferIdx + 1) % filterLen;
+
+        //find the mean
+        for(uint8_t i = 0; i < filterLen; i++){
+        	sum = sum + sampleBuffer[i];
+        }
+        uint16_t mean = sum / filterLen;
+
+        //find outliers and replace them with the mean
+        for(uint8_t i = 0; i < filterLen; i++){
+        	if(abs(sampleBuffer[i] - mean) > rejectionThreshold){
+        		clean[i] = mean;
+        	} else {
+        		clean[i] = sampleBuffer[i];
+        	}
+        }
+
+        //moving average filter
+        for (uint8_t i = 0; i < filterLen; i++) {
+            filteredSum = clean[i] + filteredSum;
+        }
+        uint16_t filtered = filteredSum / filterLen;
+
+        //downscale
+        uint16_t temp = filtered >> 2;
+        if (temp > 255) temp = 255;
+        filteredValue = (uint8_t)temp;
+
         newDataFlag = 1;  // Signal to main loop that data is ready
-        HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampledValue, 1);
+        HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
     }
 
     if (huart == &huart2) {
-            HAL_UART_Receive_IT(&huart2, (uint8_t*)send_data, 1);
+            HAL_UART_Receive_IT(&huart2, (uint8_t*)&send_data, 1);
         }
 }
 
@@ -143,7 +199,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampledValue, 1);
+  HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
   HAL_UART_Receive_IT(&huart2, (uint8_t*)&send_data, 1);
   HAL_TIM_Base_Start(&htim16);
   /* Infinite loop */

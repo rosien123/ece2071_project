@@ -13,7 +13,7 @@ devices = serial.tools.list_ports.comports()
 for dev in devices:
     print(dev.device)  # Use .device instead of [0] for better compatibility
 # Initialize serial port with proper settings
-ser = serial.Serial("COM14", 115200)
+ser = serial.Serial("COM10", 115200)
 
 
 for _ in range(5 * SAMPLE_RATE):

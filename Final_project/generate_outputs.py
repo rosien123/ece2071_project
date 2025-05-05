@@ -44,5 +44,20 @@ def gen_csv(data:np.ndarray, sample_rate: int):
         csvwriter.writerow([f"Sample Rate: {sample_rate}"])
         #write all the values
         for d in data:
-            csvwriter.writerows(d)
-    
+            csvwriter.writerow([d])
+
+if __name__ == "__main__":
+    # simulate some dummy data
+    sample_rate = 5000  # 5k samples/sec
+    raw_data = [10, 20, 30, 40, 50, 60, 70, 80]  # dummy list of integers
+    data = np.array(raw_data)
+
+    # normalize and scale like manual_sample would do
+    data = (data - data.min()) / (data.max() - data.min())
+    data = data * 255
+    data = data.astype(np.uint8)
+
+    # now test output generation
+    gen_wav(data, sample_rate)
+    gen_png(data, sample_rate)
+    gen_csv(data, sample_rate)

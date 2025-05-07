@@ -10,9 +10,9 @@ user input.
 Each function should take in a numpy data array, generate the required output format and save it in the correct
 file. The user can open this file on their device. Functions do not need to handle output viewing (for now).
 
-Last modified by: 
-Date last modified:
-Changes made:
+Last modified by: Liz
+Date last modified: 30/04
+Changes made: Generation of data into waveform, png and csv
 """
 
 def gen_wav(data: np, sample_rate: int):

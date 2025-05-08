@@ -1,9 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
-  **************************
+  ******************************************************************************
   * @file           : main.c
   * @brief          : Main program body
-  **************************
+  ******************************************************************************
   * @attention
   *
   * Copyright (c) 2025 STMicroelectronics.
@@ -13,15 +13,12 @@
   * in the root directory of this software component.
   * If no LICENSE file comes with this software, it is provided AS-IS.
   *
-  **************************
+  ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -59,14 +56,14 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM16_Init(void);
 /* USER CODE BEGIN PFP */
+volatile uint8_t sampledValue = 0;
+volatile uint8_t previousSampledValue = 0;  // New: To store the previous sample
 volatile uint8_t filteredValue = 0;
-volatile uint8_t newDataFlag = 0;   // Flag: new data available
-volatile uint8_t send_data = 0;
-volatile uint8_t bit;
-uint8_t txBuffer[2];
+int send_data = 0;
+uint8_t stopSignal = 1;
 
-const uint8_t filterLen = 4;
-const uint8_t rejectionThreshold = 20;
+const uint8_t filterLen = 3;
+const uint8_t rejectionThreshold = 7;
 
 volatile uint8_t sampleBytes[2];
 volatile uint16_t reconstructedSample = 0;
@@ -74,55 +71,71 @@ volatile uint16_t reconstructedSample = 0;
 uint16_t sampleBuffer[4] = {0};
 uint8_t bufferIdx = 0;
 
+
+
+
 /* USER CODE END PFP */
 void ultrasonic_sensor() {
-	  HAL_GPIO_WritePin(trigger_GPIO_Port, trigger_Pin, 1);
-	  __HAL_TIM_SET_COUNTER(&htim16,0); // reset counter to count trigger
-	  while (__HAL_TIM_GET_COUNTER(&htim16) < 10);
-	  HAL_GPIO_WritePin(trigger_GPIO_Port, trigger_Pin, 0);
-	  while (HAL_GPIO_ReadPin(Echo_GPIO_Port, Echo_Pin) != 1);
-	  __HAL_TIM_SET_COUNTER(&htim16,0);
-	  while (HAL_GPIO_ReadPin(Echo_GPIO_Port, Echo_Pin) != 0);
-	  float echoTime = __HAL_TIM_GET_COUNTER(&htim16);
-	  float distance = echoTime / 58.309;
-	  if (distance < 10) {
-		  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 1);
-		  //bit = 1;
-	  } else {
-		  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 0);
-		  //bit = 0;
-	  }
-	  HAL_Delay(30);
+
+    HAL_GPIO_WritePin(trigger_GPIO_Port, trigger_Pin, 1);
+    __HAL_TIM_SET_COUNTER(&htim16, 0);
+    while (__HAL_TIM_GET_COUNTER(&htim16) < 10);
+    HAL_GPIO_WritePin(trigger_GPIO_Port, trigger_Pin, 0);
+
+    while (HAL_GPIO_ReadPin(Echo_GPIO_Port, Echo_Pin) != 1);
+    __HAL_TIM_SET_COUNTER(&htim16, 0);
+    while (HAL_GPIO_ReadPin(Echo_GPIO_Port, Echo_Pin) != 0);
+
+    float echoTime = __HAL_TIM_GET_COUNTER(&htim16);
+    float distance = echoTime / 58.309;
+
+    if (distance <= send_data && distance > 0) {
+        HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 1); // LED ON when close
+        HAL_UART_Transmit_IT(&huart2, (uint8_t*)&filteredValue, 1);
+
+    } else if (distance > send_data) {
+    	filteredValue = 0;
+    	HAL_UART_AbortReceive_IT(&huart1);
+        HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 0); // LED OFF when far
+        HAL_UART_Transmit_IT(&huart2, (uint8_t*)&filteredValue, 1);
+        HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
+    }
+
+    HAL_Delay(60);
 }
+//static uint16_t downsampleBuffer[2];
+//static uint8_t downsampleIndex = 0;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-//define varibales
-
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart == &huart1) {
         //define variables
     	uint32_t sum = 0;
     	uint16_t clean[4];
     	uint32_t filteredSum = 0;
-    	static uint8_t downsampleToggle = 0;  // toggles between 0 and 1
+
+//    	static uint8_t downsampleToggle = 0;  // toggles between 0 and 1
         HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
 
-        downsampleToggle ^= 1;  // flip between 0 and 1
-        if (downsampleToggle == 0) {
-            return;  // skip every alternate sample to achieve 22.05ksps
-        }
+//        downsampleToggle ^= 1;  // flip between 0 and 1
+//        if (downsampleToggle == 0) {
+//            return;  // skip every alternate sample to achieve 22.05ksps
+//        }
 
-    	//accomodate the 10bit
-    	reconstructedSample = (sampleBytes[1] << 8) | sampleBytes[0];
+        // reconstruct sample first
+        reconstructedSample = (sampleBytes[1] << 8) | sampleBytes[0];
+//
+//        // apply downsampling
+//        downsampleBuffer[downsampleIndex++] = reconstructedSample;
+//        if (downsampleIndex < 2) return;
+//
+//        uint16_t averagedSample = (downsampleBuffer[0] + downsampleBuffer[1]) / 2;
+//        downsampleIndex = 0;
 
-    	//store sample in buffer and move idx
-        sampleBuffer[bufferIdx] = reconstructedSample;
-        bufferIdx = (bufferIdx + 1) % filterLen;
+
+		//store sample in buffer and move idx
+		sampleBuffer[bufferIdx] = reconstructedSample;
+		bufferIdx = (bufferIdx + 1) % filterLen;
 
         //find the mean
         for(uint8_t i = 0; i < filterLen; i++){
@@ -150,8 +163,32 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         if (temp > 255) temp = 255;
         filteredValue = (uint8_t)temp;
 
-        newDataFlag = 1;  // Signal to main loop that data is ready
-        HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
+//        downsampleToggle ^= 1;
+//
+//	    if (downsampleToggle == 0) {
+//		  HAL_UART_Transmit_IT(&huart2, (uint8_t*)&filteredValue, 1);
+//	    }
+
+        static uint8_t previousFilteredValue = 0;
+        uint8_t transmitValue=0;
+        static uint8_t downsampleToggle = 0;
+
+        downsampleToggle ^= 1;
+
+        if (downsampleToggle == 0) {
+            // Even cycle: send the real filtered value
+            transmitValue = filteredValue;
+            previousFilteredValue = filteredValue;
+        } else {
+            // Odd cycle: send interpolated average of previous and current
+            transmitValue = (previousFilteredValue + filteredValue) / 2;
+//        	transmitValue = 0;
+        }
+
+        // Always send
+        HAL_UART_Transmit_IT(&huart2, &transmitValue, 1);
+
+
     }
 
     if (huart == &huart2) {
@@ -198,32 +235,27 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   MX_TIM16_Init();
-  /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
-  HAL_UART_Receive_IT(&huart2, (uint8_t*)&send_data, 1);
   HAL_TIM_Base_Start(&htim16);
+  /* USER CODE BEGIN 2 */
+  HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 1);
+  HAL_UART_Receive_IT(&huart2, (uint8_t*)&send_data, 1);
+  /* USER CODE END 2 */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
-    /* USER CODE END WHILE */
-    /* USER CODE BEGIN 3 */
-	  ultrasonic_sensor();
-	  if (send_data == 1){
-		  if (newDataFlag) {
-			  newDataFlag = 0;
-			  HAL_UART_Transmit_IT(&huart2, (uint8_t*)&filteredValue, 1);
+
+	  	  if (send_data >= 2) {
+		        ultrasonic_sensor();
+		  } else if (send_data == 0) {
+			  HAL_UART_Receive_IT(&huart1, (uint8_t*)&sampleBytes, 2);
 		  }
-	  } else if (send_data >= 1) {
-		  if (newDataFlag) {
-		 	      newDataFlag = 0;
-		 	      txBuffer[0] = filteredValue;
-		 	      txBuffer[1] = bit;
-		 	      HAL_UART_Transmit_IT(&huart2, (uint8_t*)&filteredValue, 1);
-		 	  }
-	  }
+	  	  //HAL_UART_Receive_IT(&huart2, (uint8_t*)&send_data, 1); // Re-arm reception
 
   }
+
   /* USER CODE END 3 */
 }
 
@@ -303,9 +335,9 @@ static void MX_TIM16_Init(void)
 
   /* USER CODE END TIM16_Init 1 */
   htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 8;
+  htim16.Init.Prescaler = 31;
   htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 80;
+  htim16.Init.Period = 65535;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
   htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -335,7 +367,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 352800;
+  huart1.Init.BaudRate = 529200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -471,4 +503,4 @@ void assert_failed(uint8_t *file, uint32_t line)
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
-#endif /* USE_FULL_ASSERT */
+#endif /* USE_FULL_ASSERT */
